@@ -1,0 +1,478 @@
+---
+title: "stats_Project"
+author: "Alex Rizvanov"
+date: "4/29/2021"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ISLR)
+library(leaps)
+#install.packages("plm")
+library(plm)
+```
+
+### Load In data
+```{r}
+
+df2018 <- read.csv("trimmed_2018data.csv")
+names2018 = names(df2018)
+#names2018
+df2018 = df2018[-60]
+
+
+df2017 <- read.csv("trimmed_2017data.csv")
+names2017 = names(df2017)
+#names2017
+df2017 = df2017[-60]
+
+
+#Make sure all the companies are the same for each year
+companies2017<- unlist(df2017["Company.Name"])
+companies2018 <- unlist(df2018["Company.Name"])
+companies.in.common = intersect(companies2017,companies2018)
+
+idx2017 = companies2017 %in% companies.in.common
+df2017=df2017[idx2017==TRUE,][-1]
+#df2017$Class = ifelse(df2017$Class==1, "Up", "Down")
+
+idx2018 = companies2018 %in% companies.in.common
+df2018=df2018[idx2018==TRUE,][-1]
+#df2018$Class = ifelse(df2018$Class==1, "Up", "Down")
+
+
+```
+
+
+```{r}
+cor = rep(NA,length(ncol(df2018)-2))
+nameVal = rep(NA,length(ncol(df2018)-2))
+for (col in 1:(ncol(df2018)-2)) {
+  
+  cor[col] =cor(df2018[,col],df2018[,59] )
+  nameVal[col] = names(df2018)[col]
+  
+}
+#cor
+#nameVal
+correlationsOfPredictorsToClass=data.frame( names = nameVal, cor =  cor )
+
+library(gridExtra)
+pdf("correlationsOfPredictorsToClass.pdf", height=20, width=8.5)
+grid.table(correlationsOfPredictorsToClass)
+dev.off()
+
+```
+
+
+### Finding correlation
+```{r}
+df2018_nums =df2018[-c(58)]
+matCor <- cor(df2018_nums)
+nlargest <- function(m, n, sim = TRUE) {
+  mult <- 1;
+  if (sim) mult <- 2;
+  res <- order(m, decreasing = TRUE)[-c(1:64)][seq_len(n) * mult];
+  pos <- arrayInd(res, dim(m), useNames = TRUE);
+  list(values = m[res],
+       position = pos)
+  return(list(values = m[res],
+       position = pos))
+}
+#res
+## function to return n largest values and position for matrix m
+n = 50
+varNames=names(df2018_nums)
+pos = data.frame(nlargest(matCor, n))
+row = pos[2]
+col =pos[3]
+corVals=pos[1]
+
+df <- data.frame(var1 = rep(0, n),var2 = rep(0, n),corrVal = rep(0, n),
+                 stringsAsFactors=FALSE) 
+
+#print(pos)
+var1 = rep(0, n)
+var2 = rep(0, n)
+corrVal = rep(0, n)
+for(i in seq(1,n, by =1)){
+  df$var1[i] =varNames[row[i,]]
+  df$var2[i] = varNames[col[i,]]
+  df$corrVal[i] = corVals[i,]
+  #print(c(varNames[row[i,]], varNames[col[i,]]))
+}
+
+print(df)
+
+library(gridExtra)
+pdf("cor.pdf", height=30, width=8.5)
+grid.table(df)
+dev.off()
+```
+
+```{r}
+hist(df2018[,"X5Y.Revenue.Growth..per.Share."],main = "Revenue Growth Per Share (5 years)", xlab = "Per Share ($)", breaks = 100, xlim = c(-2,7))
+
+
+hist(df2018[,"X5Y.Net.Income.Growth..per.Share."],main = "Net Income Growth Per Share (5 years)  ", xlab = "Per Share ($)", breaks = 100)
+
+hist(df2018[,"X5Y.Dividend.per.Share.Growth..per.Share."],main = "Dividend Growth Per Share (5 years)", xlab = "Per Share ($)", breaks = 30, xlim = c(-2,6))
+
+
+hist(df2018[,"Free.Cash.Flow"]/1000000000,main = "Free Cash Flow", xlab = "($ Billion)", breaks = 75, xlim = c(-10,20))
+
+
+hist(df2018[,"R.D.Expense.Growth"],main = "Research and Development Expense Growth", xlab = "($)", breaks = 100, xlim = c(-5,15))
+
+
+hist(df2018[,"Net.Debt"]/1000000000,main = "Net Debt", xlab = "($ Billion)", breaks = 50, xlim = c(-100,300))
+
+
+hist(df2018[,"Gross.Profit"]/1000000000,main = "Gross Profit", xlab = " ($ Billion)", breaks = 50, xlim=c(-10,40))
+
+
+hist(df2018[,"Capital.Expenditure"]/1000000,main = "Capital Expenditure", xlab = "($ Million)", breaks = 75, xlim = c(-8000, 1000))
+
+
+hist(df2018[,"Book.Value.per.Share.Growth"],main = "Book Value per Share Growth", breaks = 200,xlim = c(-10,50), xlab = "($)" )
+
+hist(df2018[,"priceBookValueRatio"]/1000000,main = "Price Book Value Ratio", breaks = 500, xlab = " ($ Million)" , xlim= c(-2,5))
+```
+
+
+```{r}
+
+library(jpeg)
+for (col in 2:ncol(df2018_nums)) {
+  mypath <- file.path("/Users/alexs_home/Documents/Colby_2021/SC324/SC_Project/2018_data/",paste("hist_", names(df2018_nums[col]), ".jpg", sep = ""))
+
+ jpeg(file=mypath)
+    #mytitle = paste("my title is", names(df2018)[col])
+   hist(df2018_nums[,col], main = names(df2018_nums)[col], breaks=200)
+ dev.off()
+}
+```
+
+### Normalize Data
+```{r cars}
+#normalize the data
+normalize<- function(x){
+  return ((x-min(x)/ (max(x)-min(x))))
+}
+
+
+df_normalized2018 = as.data.frame(lapply(df2018[-c(58,59)],normalize))
+df_normalized2018$Class= df2018$Class
+df_normalized2017 = as.data.frame(lapply(df2017[-c(58,59)],normalize))
+df_normalized2017$Class= df2017$Class
+
+
+#detect.lindep(df2017)
+```
+
+
+### Making training and testing data
+```{r}
+set.seed(1)
+trainID=sample(1:nrow(df_normalized2018), nrow(df_normalized2018)/2)
+trainData2018 = df2018[trainID,]
+testData2018 = df2018[-trainID,]
+trainData2018_normalized = df_normalized2018[trainID,]
+testData2018_normalized = df_normalized2018[-trainID,]
+
+
+trainID2017=sample(1:nrow(df_normalized2017), nrow(df_normalized2017)/2)
+trainData2017_normalized = df_normalized2017[trainID2017,]
+testData2017_normalized = df_normalized2017[-trainID2017,]
+
+
+trainData2017 = df2017[trainID2017,]
+testData2017 = df2017[-trainID2017,]
+
+#df2018= df2018[-59]
+#df2017= df2017[-59]
+
+```
+
+
+### Subset selection
+```{r}
+
+set.seed(1)
+reg.forward = regsubsets(Class ~. , data=trainData2018, method="forward", nvmax=50)
+reg.forward.summary = summary(reg.forward)
+
+par(mfrow = c(1, 3))
+
+min.cp <- which.min(reg.forward.summary$cp)
+min.cp
+min.bic <- which.min(reg.forward.summary$bic)
+min.bic
+max.adjr <-which.max(reg.forward.summary$adjr2)
+max.adjr
+
+plot(reg.forward.summary$cp,xlab="Number of Predictors", ylab="Cp")
+points(min.cp, reg.forward.summary$cp[min.cp], col="red", cex = 2, pch = 20)
+
+
+plot(reg.forward.summary$bic,xlab="Number of Predictors", ylab="Bic")
+points(min.bic, reg.forward.summary$bic[min.bic], col="red", cex = 2, pch = 20)
+
+plot(reg.forward.summary$adjr2,xlab="Number of Predictors", ylab="Adjr")
+points(max.adjr, reg.forward.summary$adjr2[max.adjr], col="red", cex = 2, pch = 20)
+
+
+numOfPreds = 18
+predictors = reg.forward$xnames[2:numOfPreds+1] #Chose 20 predictors
+#print(paste(predictors, collapse =" + "))
+fmla <- as.formula(paste("Class ~", paste(predictors, collapse ="+")))
+fmla
+
+
+
+```
+
+
+
+### Logistic Regression on just the 2018 data
+
+```{r}
+library(ISLR)
+
+my.mlr = glm(fmla, data=trainData2018, family = "binomial")
+#summary(my.mlr)
+
+prob.train = predict (my.mlr ,testData2018 , type="response")
+predict01.mlr = ifelse(prob.train>0.5, 1, 0)
+
+Actual <-testData2018$Class
+Predicted <-predict01.mlr
+predict01.mlr = ifelse(prob.train>0.5, 1, 0)
+print("")
+table(Actual, Predicted)
+1-mean(Actual == Predicted)
+
+
+```
+
+
+### Testing if the model would work on the 2017 data set
+
+```{r}
+my.mlr = glm(fmla, data=trainData2018, family = "binomial")
+prob.train = predict (my.mlr ,df2017 , type="response")
+predict01.mlr = ifelse(prob.train>0.5, 1, 0)
+
+Actual <-df2017$Class
+Predicted <-predict01.mlr
+table(Actual, Predicted)
+1-mean(df2017$Class == predict01.mlr)
+
+```
+
+
+### Knn  
+```{r}
+set.seed(1)
+
+library(class)
+library(dplyr)
+library(e1071)
+library(FNN) 
+library(psych)
+
+
+k = c(3, 4,5,6,7,8,9, 10,25,50,100)
+#k = c(10,150 ,300)
+trainData2018[58] = as.data.frame(dummy.code(trainData2018$Sector))
+testData2018[58] = as.data.frame(dummy.code(testData2018$Sector))
+df2017[58] = as.data.frame(dummy.code(df2017$Sector))
+make_knn_pred = function(k) {
+  pred = FNN::knn.reg(train = trainData2018, 
+                      test = testData2018, 
+                      y = trainData2018$Class, k = k)$pred
+  #print(summary(pred))
+  pred = ifelse(pred>0.5, 1, 0)
+  act  = testData2018$Class
+  
+  table(pred, act)
+  print(1-mean(pred == act))
+}
+
+
+knn_trn_errorRate = sapply(k, make_knn_pred)
+
+best_k = k[which.min(knn_trn_errorRate)]
+best_k
+min(knn_trn_errorRate)
+
+plot(k,knn_trn_errorRate , xlab = "K" , ylab = "Misclassification  Rate")
+points(best_k, min(knn_trn_errorRate), col="red", cex = 2, pch = 20)
+
+
+
+prob_knn_2017  = knn.reg(train = trainData2018, test = df2017, y = trainData2018$Class, k = best_k)$pred
+predicted = ifelse(prob_knn_2017>0.5, 1, 0)
+actual  = df2017$Class
+table(actual, predicted)
+mean(actual!=predicted )
+
+
+
+```
+
+
+### Tree
+
+```{r}
+library(gbm)
+
+lambdas = seq(0.0001,0.5,0.01)
+missclassificationRate = rep(NA,length(lambdas))
+for( i in lambdas){
+  boost.hit = gbm(Class ~., data=trainData2018, distribution="bernoulli", n.tree= 250, 
+                  shrinkage= i, interaction.depth = 5)
+  prob.train = predict.gbm(boost.hit, newdata = df2017, n.trees= 250, type = "response")
+  pred = ifelse(prob.train>0.5, 1, 0)
+  missclassificationRate[which(i==lambdas)]=1-mean(pred==df2017$Class)
+}
+
+plot(lambdas, missclassificationRate)
+points(max.adjr, reg.forward.summary$adjr2[max.adjr], col="red", cex = 2, pch = 20)
+
+best_lambda = lambdas[which.min(missclassificationRate)]
+lowestError =min(missclassificationRate)
+best_lambda
+lowestError
+
+```
+
+
+```{r}
+library(tree)
+set.seed(1)
+#Loading in data and making traiining data
+df2017 <- read.csv("trimmed_2017data.csv")
+names2017 = names(df2017)
+#names2017
+df2017 = df2017
+
+
+df2018 <- read.csv("trimmed_2018data.csv")
+names2018 = names(df2018)
+#names2018
+df2018 = df2018
+
+#Make sure all the companies are the same for each year
+companies2017<- unlist(df2017["Company.Name"])
+companies2018 <- unlist(df2018["Company.Name"])
+companies.in.common = intersect(companies2017,companies2018)
+
+idx2017 = companies2017 %in% companies.in.common
+df2017=df2017[idx2017==TRUE,]
+#df2017$Class = ifelse(df2017$Class==1, "Up", "Down")
+
+idx2018 = companies2018 %in% companies.in.common
+df2018=df2018[idx2018==TRUE,]
+
+trainID=sample(1:nrow(df2017), nrow(df2017)/2)
+trainData = df2017[trainID,]
+testData = df2017[!trainID,]
+
+trainID=sample(1:nrow(df_normalized2018), nrow(df_normalized2018)/2)
+trainData2018 = df_normalized2018[trainID,]
+testData2018 = df_normalized2018[-trainID,]
+
+trainID2017=sample(1:nrow(df_normalized2017), nrow(df_normalized2017)/2)
+trainData2017_normalized = df_normalized2017[trainID2017,]
+testData2017_normalized = df_normalized2017[-trainID2017,]
+
+
+trainData2017 = df2017[trainID2017,]
+testData2017 = df2017[-trainID2017,]
+
+
+trainData2018$Class = as.factor(ifelse(trainData2018$Class==1, "Up", "Down"))
+testData2018$Class = as.factor(ifelse(testData2018$Class==1, "Up", "Down"))
+df2017$Class = as.factor(ifelse(df2017$Class==1, "Up", "Down"))
+df2018$Class = as.factor(ifelse(df2018$Class==1, "Up", "Down"))
+
+names(trainData2018)[which(names(trainData2018) == "X3Y.Dividend.per.Share.Growth..per.Share.")] <- "Dividend.GPS.3Year"
+trainData2018 = data.frame(trainData2018)
+names(testData2018)[which(names(testData2018) == "X3Y.Dividend.per.Share.Growth..per.Share.")] <- "Dividend.GPS.3Year"
+testData2018 = data.frame(testData2018)
+names(df2017)[which(names(df2017) == "X3Y.Dividend.per.Share.Growth..per.Share.")] <- "Dividend.GPS.3Year"
+trainData2017 = data.frame(trainData2017)
+
+```
+
+### Testing the 2018 using 2018 data
+```{r}
+
+tree.2018 <- tree(Class ~ ., data = trainData2018)
+summary(tree.2018)
+
+pdf("treeBasic.pdf") 
+plot(tree.2018,margin)
+text(tree.2018, pretty  =1, cex =1.2)
+dev.off() 
+
+predicted = tree.pred = predict(tree.2018, newdata = testData2018, type="class")
+actual = testData2018$Class
+table(predicted, actual)
+1-mean(predicted==actual)
+
+predicted = tree.pred = predict(tree.2018, newdata = df2017, type="class")
+actual = df2017$Class
+table( actual, predicted)
+1-mean(predicted==actual)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
